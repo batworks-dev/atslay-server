@@ -9,6 +9,11 @@ from pathlib import Path
 from collections import Counter
 from nltk.corpus import stopwords
 
+# Download NLTK data at startup (needed on Render — build and runtime are separate environments)
+nltk.download('stopwords', quiet=True)
+nltk.download('punkt', quiet=True)
+nltk.download('punkt_tab', quiet=True)
+
 STOP_WORDS = set(stopwords.words('english'))
 
 
