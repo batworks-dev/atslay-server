@@ -14,6 +14,8 @@ ALLOWED_EXTENSIONS = {'pdf', 'docx', 'doc'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB max upload
 
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # create folder if it doesn't exist
+
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -57,8 +59,6 @@ def health():
     return jsonify({'status': 'ATSlay API is running'}), 200
 
 
-# NEW (works on Render too)
 if __name__ == '__main__':
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    port = int(os.environ.get('PORT', 5000))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    app.run(debug=True, port=5000)
