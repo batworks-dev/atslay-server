@@ -5,3 +5,5 @@ nltk
 textstat
 numpy
 gunicorn
+dotenv
+google.generativeai
