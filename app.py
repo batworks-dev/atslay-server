@@ -1,13 +1,16 @@
 # app.py — Flask HTTP server for ATSlay
 
 import os
-from flask import Flask, request, jsonify
+from datetime import datetime, timezone
+from flask import Flask, request, jsonify, g
 from werkzeug.utils import secure_filename
 from scorer import analyse_resume
 from jd_scorer import score_resume_against_jd
 from scorer import ResumeParser
+from auth import require_auth
+from db import get_collection
 from dotenv import load_dotenv
-load_dotenv()  
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -26,6 +29,7 @@ def allowed_file(filename):
 
 
 @app.route('/score-resume', methods=['POST'])
+@require_auth
 def score_resume():
     # ── 1. Check a file was sent ──────────────────────────────────
     if 'resume' not in request.files:
@@ -54,7 +58,23 @@ def score_resume():
         if os.path.exists(save_path):
             os.remove(save_path)
 
-    # ── 4. Return JSON response ───────────────────────────────────
+    # ── 4. Save to MongoDB ────────────────────────────────────────
+    try:
+        collection = get_collection()
+        collection.insert_one({
+            "email": g.email,
+            "fileName": filename,
+            "type": "NORMAL",
+            "result": {
+                "matching_score": result.get("ats_score"),
+            },
+            "processedAt": datetime.now(timezone.utc),
+        })
+    except Exception as e:
+        # Log but don't fail the request if DB write fails
+        print(f"⚠️  Failed to save Normal scoring to DB: {e}")
+
+    # ── 5. Return JSON response ───────────────────────────────────
     return jsonify(result), 200
 
 
@@ -64,6 +84,7 @@ def health():
 
 
 @app.route('/score-resume-jd', methods=['POST'])
+@require_auth
 def score_resume_jd():
 
     # ── 1. Validate resume file ───────────────────────────────────
@@ -117,11 +138,8 @@ def score_resume_jd():
         if len(jd_text) < 50:
             return jsonify({'error': 'Could not extract text from JD file.'}), 400
 
-        # ── 6. Run Gemini JD matching ─────────────────────────────
+        # ── 6. Run Gemini JD matching (concise response) ─────────
         jd_result = score_resume_against_jd(resume_text, jd_text)
-
-        # ── 7. Run standard ATS score alongside ──────────────────
-        standard_result = analyse_resume(resume_path)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -131,15 +149,31 @@ def score_resume_jd():
         if os.path.exists(jd_path):
             os.remove(jd_path)
 
-    # ── 8. Return merged result ───────────────────────────────────
-    return jsonify({
-        'jd_analysis': jd_result,
-        'general_ats': {
-            'ats_score':        standard_result.get('ats_score'),
-            'dimension_scores': standard_result.get('dimension_scores'),
-            'suggestions':      standard_result.get('suggestions'),
-        }
-    }), 200
+    # ── 7. Build standardized response ────────────────────────────
+    response_data = {
+        "matching_score":   jd_result.get("matching_score"),
+        "recommendation":   jd_result.get("recommendation"),
+        "strengths":        jd_result.get("strengths", [])[:5],
+        "gaps":             jd_result.get("gaps", [])[:5],
+        "top_improvements": jd_result.get("top_improvements", [])[:5],
+    }
+
+    # ── 8. Save to MongoDB ────────────────────────────────────────
+    try:
+        collection = get_collection()
+        collection.insert_one({
+            "email": g.email,
+            "fileName": resume_filename,
+            "type": "JD_BASED",
+            "result": response_data.copy(),
+            "processedAt": datetime.now(timezone.utc),
+        })
+    except Exception as e:
+        # Log but don't fail the request if DB write fails
+        print(f"⚠️  Failed to save JD-Based scoring to DB: {e}")
+
+    # ── 9. Return concise response ────────────────────────────────
+    return jsonify(response_data), 200
 
 
 

@@ -19,13 +19,13 @@ genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 def score_resume_against_jd(resume_text: str, jd_text: str) -> dict:
     """
     Uses Gemini to compare a resume against a job description.
-    Returns a structured JSON with match score, gaps, and suggestions.
+    Returns a concise, recruiter-friendly JSON with match score and key insights.
     """
 
     prompt = f"""
 You are an expert ATS (Applicant Tracking System) and career coach.
 
-Analyze the resume below against the job description and return a JSON object only — no extra text, no markdown, no code fences.
+Analyze the resume below against the job description. Return ONLY a JSON object — no extra text, no markdown, no code fences.
 
 RESUME:
 \"\"\"
@@ -40,33 +40,22 @@ JOB DESCRIPTION:
 Return ONLY this JSON structure (fill in all fields accurately):
 
 {{
-  "jd_match_score": <integer 0–100, overall match percentage>,
-  "dimension_scores": {{
-    "skills_match": <0–100, how many required skills are present>,
-    "experience_match": <0–100, years/level alignment>,
-    "keyword_overlap": <0–100, JD keywords found in resume>,
-    "role_alignment": <0–100, how well the role matches past titles/work>
-  }},
-  "matched_keywords": [<list of JD keywords found in resume>],
-  "missing_keywords": [<list of important JD keywords NOT in resume>],
-  "matched_skills": [<list of required skills the candidate has>],
-  "missing_skills": [<list of required skills the candidate lacks>],
-  "experience_gap": "<string: describe any experience gap or 'No gap detected'>",
-  "strengths": [<3–5 bullet strings of what makes the candidate a strong fit>],
-  "improvements": [
-    {{
-      "priority": "<HIGH | MEDIUM | LOW>",
-      "category": "<Skills | Keywords | Experience | Formatting>",
-      "issue": "<what is missing or weak>",
-      "fix": "<specific actionable fix to improve JD match>"
-    }}
-  ],
-  "hiring_recommendation": "<STRONG FIT | GOOD FIT | PARTIAL FIT | NOT A FIT>",
-  "summary": "<2–3 sentence plain-English summary of the match>"
+  "matching_score": <integer 0–100, overall match percentage>,
+  "recommendation": "<STRONG FIT | GOOD FIT | PARTIAL FIT | NOT A FIT>",
+  "strengths": ["<top 3–5 concise strengths relevant to this JD>"],
+  "gaps": ["<top 3–5 concise skill/experience gaps>"],
+  "top_improvements": ["<top 3–5 specific, actionable improvement suggestions>"]
 }}
+
+RULES:
+- matching_score must be an integer between 0 and 100.
+- recommendation must be one of: STRONG FIT, GOOD FIT, PARTIAL FIT, NOT A FIT.
+- Each array must have 3 to 5 items maximum.
+- Keep each item short (one sentence max).
+- Do NOT include dimension breakdowns, keyword lists, or verbose summaries.
 """
 
-    model = genai.GenerativeModel("gemini-3.5-flash")  # free-tier model
+    model = genai.GenerativeModel("gemini-2.0-flash")  # free-tier model
     response = model.generate_content(prompt)
 
     raw = response.text.strip()

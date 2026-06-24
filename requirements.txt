@@ -7,3 +7,5 @@ numpy
 gunicorn
 dotenv
 google.generativeai
+pymongo
+PyJWT
