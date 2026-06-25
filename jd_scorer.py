@@ -1,24 +1,23 @@
-# jd_scorer.py — JD-based ATS scoring using Google Gemini
+# jd_scorer.py — JD-based ATS scoring using Claude (Anthropic)
 
 import os
 import json
 import re
-import google.generativeai as genai
+import anthropic
 from dotenv import load_dotenv
 load_dotenv()
 
 # ─────────────────────────────────────────────
-# CONFIGURE GEMINI
-# Set GEMINI_API_KEY in your environment or .env file
-# Get free key at: https://aistudio.google.com/app/apikey
+# CONFIGURE CLAUDE
+# Set Claude_API_Key in your .env file
 # ─────────────────────────────────────────────
 
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+client = anthropic.Anthropic(api_key=os.environ.get("Claude_API_Key"))
 
 
 def score_resume_against_jd(resume_text: str, jd_text: str) -> dict:
     """
-    Uses Gemini to compare a resume against a job description.
+    Uses Claude to compare a resume against a job description.
     Returns a concise, recruiter-friendly JSON with match score and key insights.
     """
 
@@ -55,12 +54,17 @@ RULES:
 - Do NOT include dimension breakdowns, keyword lists, or verbose summaries.
 """
 
-    model = genai.GenerativeModel("gemini-2.0-flash")  # free-tier model
-    response = model.generate_content(prompt)
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=1024,
+        messages=[
+            {"role": "user", "content": prompt}
+        ]
+    )
 
-    raw = response.text.strip()
+    raw = response.content[0].text.strip()
 
-    # Strip markdown fences if Gemini adds them anyway
+    # Strip markdown fences if Claude adds them
     raw = re.sub(r"^```(?:json)?", "", raw).strip()
     raw = re.sub(r"```$", "", raw).strip()
 
