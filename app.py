@@ -2,15 +2,21 @@
 
 import os
 from datetime import datetime, timezone
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, Response
 from werkzeug.utils import secure_filename
 from scorer import analyse_resume
 from jd_scorer import score_resume_against_jd
+from resume_optimizer import optimize_resume_to_latex, extract_text_from_latex
 from scorer import ResumeParser
 from auth import require_auth
 from db import get_collection
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv()                              # base .env
+load_dotenv('.env.local', override=True)   # local overrides win
+
+# Confirm which Gemini key is loaded at startup
+_gemini_key = os.environ.get("GEMINI_API_KEY", "")
+print(f"🔑 GEMINI_API_KEY loaded: {'SET (' + _gemini_key[:8] + '...)' if _gemini_key else 'NOT SET ⚠️'}")
 
 app = Flask(__name__)
 
@@ -176,6 +182,140 @@ def score_resume_jd():
     return jsonify(response_data), 200
 
 
+@app.route('/optimize-resume', methods=['POST'])
+@require_auth
+def optimize_resume():
+    """
+    Optimize a resume and return an ATS-friendly LaTeX source.
+
+    Send ONE of the following (not both):
+      Option A — PDF upload  : multipart field "resume" (PDF file)
+      Option B — LaTeX text  : form/JSON field "latex"  (raw LaTeX code string)
+    """
+
+    # ── 1. Determine input mode ───────────────────────────────────
+    latex_code  = request.form.get('latex') or (request.get_json(silent=True) or {}).get('latex')
+    resume_file = request.files.get('resume')
+
+    if not latex_code and not resume_file:
+        return jsonify({
+            'error': 'Provide either a PDF file (key "resume") or raw LaTeX code (key "latex").'
+        }), 400
+
+    # ── 2. Branch: LaTeX text input ───────────────────────────────
+    if latex_code:
+        if len(latex_code.strip()) < 50:
+            return jsonify({'error': 'LaTeX code is too short to process.'}), 400
+
+        try:
+            result = optimize_resume_to_latex(latex_code, is_latex_source=True)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+        filename = 'latex_input'
+
+    # ── 3. Branch: PDF file input ─────────────────────────────────
+    else:
+        if resume_file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        ext = resume_file.filename.rsplit('.', 1)[-1].lower() if '.' in resume_file.filename else ''
+        if ext != 'pdf':
+            return jsonify({'error': 'Invalid file type. Upload a PDF or send LaTeX code via the "latex" field.'}), 400
+
+        filename  = secure_filename(resume_file.filename)
+        save_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        resume_file.save(save_path)
+
+        try:
+            parser      = ResumeParser()
+            resume_text = parser.clean_text(parser.extract_text(save_path))
+            if len(resume_text) < 100:
+                return jsonify({'error': 'Could not extract text from PDF. Is it image-based or scanned?'}), 400
+
+            result = optimize_resume_to_latex(resume_text, is_latex_source=False)
+
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        finally:
+            if os.path.exists(save_path):
+                os.remove(save_path)
+
+    # ── 4. Save to MongoDB ────────────────────────────────────────
+    try:
+        collection = get_collection()
+        collection.insert_one({
+            "email":       g.email,
+            "fileName":    filename,
+            "type":        "OPTIMIZED",
+            "result": {
+                "improvements": result.get("improvements", []),
+                "ats_tips":     result.get("ats_tips", []),
+            },
+            "processedAt": datetime.now(timezone.utc),
+        })
+    except Exception as e:
+        print(f"⚠️  Failed to save Optimize result to DB: {e}")
+
+    # ── 5. Return response ────────────────────────────────────────
+    return Response(
+    result["optimized_latex"],
+    mimetype="text/plain"
+    )
+
+
+@app.route('/optimize-resume/download', methods=['POST'])
+@require_auth
+def optimize_resume_download():
+    """
+    Same as /optimize-resume but returns the optimized LaTeX
+    as a plain-text .tex file download instead of JSON.
+    This avoids any JSON escape-sequence issues when pasting into Overleaf.
+
+    Send ONE of the following:
+      Option A — PDF upload : multipart field "resume" (PDF file)
+      Option B — LaTeX text : form/JSON field "latex"  (raw LaTeX code string)
+    """
+    latex_code  = request.form.get('latex') or (request.get_json(silent=True) or {}).get('latex')
+    resume_file = request.files.get('resume')
+
+    if not latex_code and not resume_file:
+        return jsonify({'error': 'Provide either a PDF file (key "resume") or raw LaTeX code (key "latex").'}), 400
+
+    if latex_code:
+        if len(latex_code.strip()) < 50:
+            return jsonify({'error': 'LaTeX code is too short to process.'}), 400
+        try:
+            result = optimize_resume_to_latex(latex_code, is_latex_source=True)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    else:
+        if resume_file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        ext = resume_file.filename.rsplit('.', 1)[-1].lower() if '.' in resume_file.filename else ''
+        if ext != 'pdf':
+            return jsonify({'error': 'Upload a PDF or send LaTeX via the "latex" field.'}), 400
+        filename  = secure_filename(resume_file.filename)
+        save_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        resume_file.save(save_path)
+        try:
+            parser      = ResumeParser()
+            resume_text = parser.clean_text(parser.extract_text(save_path))
+            if len(resume_text) < 100:
+                return jsonify({'error': 'Could not extract text from PDF.'}), 400
+            result = optimize_resume_to_latex(resume_text, is_latex_source=False)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        finally:
+            if os.path.exists(save_path):
+                os.remove(save_path)
+
+    latex_content = result.get("optimized_latex", "")
+    return Response(
+        latex_content,
+        mimetype='text/plain',
+        headers={'Content-Disposition': 'attachment; filename="optimized_resume.tex"'}
+    )
 
 
 if __name__ == '__main__':
