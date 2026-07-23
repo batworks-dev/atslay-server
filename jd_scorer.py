@@ -55,7 +55,7 @@ RULES:
 - Do NOT include dimension breakdowns, keyword lists, or verbose summaries.
 """
 
-    model = genai.GenerativeModel("gemini-2.0-flash")  # free-tier model
+    model = genai.GenerativeModel("gemini-2.5-flash")  # free-tier model
     response = model.generate_content(prompt)
 
     raw = response.text.strip()

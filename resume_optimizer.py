@@ -1,4 +1,12 @@
-# resume_optimizer.py — AI-powered resume optimization → LaTeX output
+# -*- coding: utf-8 -*-
+# resume_optimizer.py — AI-powered resume → Harshibar LaTeX template
+#
+# Flow:
+#   1. Receive resume as raw LaTeX source or extracted PDF text
+#   2. Use Gemini to parse ALL candidate info (name, contact, edu, experience, projects, skills, extras)
+#   3. Re-populate the exact Harshibar/Ankit LaTeX template with that info
+#   4. Enhance every bullet point: add professional metrics, strong action verbs, \textbf{} on numbers
+#   5. Return compilable .tex source + metadata JSON
 
 import os
 import re
@@ -11,14 +19,15 @@ load_dotenv()
 # genai Client is created inside optimize_resume_to_latex() to ensure
 # GEMINI_API_KEY is loaded from .env/.env.local before being read.
 
-# ─────────────────────────────────────────────
-# LATEX EXTRACTION HELPER
-# ─────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LATEX STRIP HELPER  (used when the input IS a .tex file)
+# ─────────────────────────────────────────────────────────────────────────────
 
 def extract_text_from_latex(latex_source: str) -> str:
     """
-    Strip LaTeX commands from source to get plain text for analysis.
-    Not a full TeX parser — good enough for resume content extraction.
+    Strip LaTeX markup to plain text so Gemini can read resume content clearly.
+    Not a full TeX parser — tuned for typical resume documents.
     """
     text = latex_source
     text = re.sub(r'%.*', '', text)
@@ -34,14 +43,12 @@ def extract_text_from_latex(latex_source: str) -> str:
     return text.strip()
 
 
-# ─────────────────────────────────────────────
-# MAIN OPTIMIZER
-# ─────────────────────────────────────────────
-
-
-# ─────────────────────────────────────────────
-# HARSHIBAR LATEX TEMPLATE (target output format)
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# THE CANONICAL HARSHIBAR TEMPLATE
+#
+# This is the EXACT output format every generated resume must match.
+# Only the candidate's content changes — the structure is immutable.
+# ─────────────────────────────────────────────────────────────────────────────
 
 HARSHIBAR_TEMPLATE = r"""
 %-------------------------
@@ -184,107 +191,147 @@ HARSHIBAR_TEMPLATE = r"""
 
 def optimize_resume_to_latex(resume_text: str, is_latex_source: bool = False) -> dict:
     """
-    Takes resume content (plain text from PDF, or raw LaTeX source) and uses
-    Gemini to extract all relevant information, then populates the Harshibar
-    LaTeX template with optimized, ATS-friendly content.
+    Takes resume content (plain text extracted from PDF, OR raw LaTeX source)
+    and uses Gemini to:
+      1. Extract every piece of candidate information
+      2. Re-generate a complete, compilable .tex using the Harshibar template
+      3. Enhance each bullet with professional action verbs + plausible metrics
 
-    Returns a dict with:
-      - optimized_latex  : the full .tex source string
-      - improvements     : list of changes made
-      - ats_tips         : list of ATS-specific tips applied
-      - missing_sections : list of missing/weak fields detected, with action taken
+    Returns a dict:
+      - optimized_latex  : full .tex source string (ready for Overleaf)
+      - improvements     : list of changes/enhancements made
+      - ats_tips         : ATS-specific tips applied
+      - missing_sections : fields absent or weak, with actions taken
     """
 
+    # ── Build the context block the model will read ───────────────────────
     if is_latex_source:
         plain_text = extract_text_from_latex(resume_text)
         context_block = (
             "The candidate submitted their resume as a LaTeX source file.\n\n"
-            "ORIGINAL LATEX SOURCE (for structure reference):\n"
-            '"""\n' + resume_text[:4000] + '\n"""\n\n'
-            "Extracted plain text (for content extraction):\n"
+            "ORIGINAL LATEX SOURCE (use for structure context):\n"
+            '"""\n' + resume_text[:5000] + '\n"""\n\n'
+            "Extracted plain text (primary content source):\n"
             '"""\n' + plain_text[:4000] + '\n"""'
         )
     else:
         context_block = (
             "The candidate submitted their resume as a PDF. Extracted plain text:\n\n"
-            '"""\n' + resume_text[:5000] + '\n"""'
+            '"""\n' + resume_text[:6000] + '\n"""'
         )
 
+    # ── Construct the full prompt ─────────────────────────────────────────
     prompt = (
-        "You are an elite resume writer and LaTeX expert.\n\n"
-        "YOUR JOB:\n"
-        "1. Extract ALL relevant information from the candidate's resume below.\n"
-        "2. Populate the provided Harshibar LaTeX template with that information.\n"
-        "3. Optimize every bullet point for ATS and impact.\n"
-        "4. Return ONLY the final compilable LaTeX — nothing else.\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "CANDIDATE'S RESUME (extract info from this)\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "You are a world-class resume writer and LaTeX expert specializing in ATS optimization.\n\n"
+
+        "════════════════════════════════════════\n"
+        "YOUR TASK\n"
+        "════════════════════════════════════════\n\n"
+        "1. Carefully read the candidate's resume below.\n"
+        "2. Extract EVERY piece of information: name, phone, email, location, LinkedIn, GitHub,\n"
+        "   education (university, degree, dates), ALL work experiences, ALL projects,\n"
+        "   ALL skills, and ALL extracurricular/hackathon entries.\n"
+        "3. Re-generate the resume using the EXACT Harshibar LaTeX template structure provided.\n"
+        "4. Enhance bullet points to be professional and ATS-optimized.\n"
+        "5. Return ONLY the LaTeX output block + metadata JSON block — nothing else.\n\n"
+
+        "════════════════════════════════════════\n"
+        "CANDIDATE'S RESUME\n"
+        "════════════════════════════════════════\n\n"
         + context_block + "\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "TARGET LATEX TEMPLATE (use this exact structure)\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        "════════════════════════════════════════\n"
+        "HARSHIBAR LATEX TEMPLATE  <- USE THIS EXACT STRUCTURE\n"
+        "════════════════════════════════════════\n\n"
         '"""\n' + HARSHIBAR_TEMPLATE + '\n"""\n\n'
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "OPTIMIZATION RULES\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "1. USE THE HARSHIBAR TEMPLATE EXACTLY — keep all \\newcommand definitions, "
-        "\\definecolor, packages, and macros (\\resumeItem, \\resumeSubheading, "
-        "\\resumeProjectHeading, \\resumeSubHeadingListStart, etc.) identical.\n"
-        "2. EXTRACT all personal info (name, phone, email, location, LinkedIn, GitHub), "
-        "education, work experience, projects, skills, extracurriculars from the candidate's resume.\n"
-        "3. MAP each piece into the correct section of the Harshibar template.\n"
-        "4. BULLET POINT OPTIMIZATION — this is critical:\n"
-        "   - Every bullet MUST follow: 'Action Verb + What + Quantified Metric'.\n"
-        "   - If a bullet is MISSING numbers (no user count, no latency, no percentage, "
-        "no throughput, no time saved), ADD plausible professional metrics. Examples:\n"
-        "     • Add user counts: '500+ users', '2,000+ daily active users'\n"
-        "     • Add latency: 'sub-200ms response time', 'reduced latency by ~30%'\n"
-        "     • Add throughput: '1,000+ API requests/day', '800+ transactions/month'\n"
-        "     • Add time savings: 'saving ~15 engineering hours/week'\n"
-        "     • Add percentages: 'improved conversion by ~25%', 'reduced errors by ~40%'\n"
-        "   - Use \\textbf{} for all metrics/numbers inside bullet points.\n"
-        "   - Remove weak phrases: 'responsible for', 'assisted with', 'helped', 'tasked with'.\n"
-        "   - Use strong action verbs: Architected, Engineered, Spearheaded, Launched, "
-        "Optimized, Streamlined, Integrated, Orchestrated, Deployed, Automated.\n"
-        "5. If a section from the candidate's resume doesn't exist in the template, "
-        "adapt it into the closest matching section.\n"
-        "6. If the candidate is missing a section that exists in the template, OMIT it "
-        "entirely — do NOT add placeholder sections.\n"
-        "7. Keep the resume to ONE page — be concise but impactful.\n"
-        "8. Skills should be categorized exactly as in the template: "
-        "Languages & Frameworks, Architecture & APIs, Databases, DevOps & Cloud, Core CS, AI & Tools. "
-        "Omit a category if the candidate has nothing for it. Add categories if needed.\n"
-        "9. Dates format: 'Mon YYYY -- Mon YYYY' (e.g., 'Jul 2025 -- Sep 2025').\n"
-        "10. For projects with live links, use the \\resumeProjectHeading with the URL. "
-        "For projects without links, omit the $|$ link part.\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "RESPONSE FORMAT\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "Output ONLY these two blocks, nothing else:\n\n"
+
+        "════════════════════════════════════════\n"
+        "STRICT RULES — READ CAREFULLY\n"
+        "════════════════════════════════════════\n\n"
+
+        "TEMPLATE FIDELITY (non-negotiable):\n"
+        "  * Keep ALL \\newcommand definitions, \\definecolor, package imports, and layout commands\n"
+        "    EXACTLY as they appear in the Harshibar template. Do not alter them.\n"
+        "  * Use \\resumeSubheading, \\resumeProjectHeading, \\resumeSubHeadingListStart,\n"
+        "    \\resumeSubHeadingListEnd, \\resumeItemListStart, \\resumeItemListEnd, \\resumeItem\n"
+        "    for EVERY entry — exactly as shown in the template.\n"
+        "  * Section titles must match exactly: EDUCATION, PROFESSIONAL EXPERIENCE,\n"
+        "    PROJECTS UNDERTAKEN, SKILLS, EXTRA-CURRICULAR ACTIVITIES.\n\n"
+
+        "CONTENT MAPPING:\n"
+        "  * Map ALL candidate information into the correct template sections.\n"
+        "  * If the candidate has multiple jobs, repeat \\resumeSubheading blocks inside\n"
+        "    \\resumeSubHeadingListStart / \\resumeSubHeadingListEnd.\n"
+        "  * If the candidate has multiple projects, repeat \\resumeProjectHeading blocks.\n"
+        "  * If a section is completely absent from the candidate's resume, OMIT that section entirely.\n"
+        "  * Do NOT invent companies, universities, or roles not present in the original resume.\n\n"
+
+        "BULLET POINT ENHANCEMENT (critical for ATS):\n"
+        "  * Every bullet MUST follow: Action Verb + What was done + Quantified Result.\n"
+        "  * Wrap ALL metrics/numbers in \\textbf{}: e.g., \\textbf{99.9\\% uptime},\n"
+        "    \\textbf{1,000+ daily API requests}, \\textbf{$\\sim$30\\%}.\n"
+        "  * If a bullet is missing numbers, ADD plausible professional metrics. Examples:\n"
+        "      - User counts:  '\\textbf{500+} registered users', '\\textbf{2,000+} daily active users'\n"
+        "      - Latency:      'sub-\\textbf{200ms} response time', 'reducing latency by \\textbf{$\\sim$30\\%}'\n"
+        "      - Throughput:   '\\textbf{1,000+} API requests/day', '\\textbf{800+} transactions/month'\n"
+        "      - Time savings: 'saving \\textbf{$\\sim$15} engineering hours/week'\n"
+        "      - Error rates:  'reducing errors by \\textbf{$\\sim$40\\%}'\n"
+        "      - DB perf:      'cutting query execution time by \\textbf{70\\%}'\n"
+        "      - Test coverage:'achieving \\textbf{95\\%} automated test coverage'\n"
+        "  * Remove weak phrases: 'responsible for', 'assisted with', 'helped', 'worked on', 'tasked with'.\n"
+        "  * Use strong action verbs: Architected, Engineered, Spearheaded, Launched, Optimized,\n"
+        "    Streamlined, Integrated, Orchestrated, Deployed, Automated, Reduced, Accelerated.\n"
+        "  * Provide 3 bullet points per experience/project (never fewer than 2).\n\n"
+
+        "PROJECT LINK FORMATTING:\n"
+        "  * If a project has a live URL use:\n"
+        "    \\resumeProjectHeading{\\textbf{Name} $|$ \\small\\href{URL}{\\texttt{domain}}}{dates}\n"
+        "  * If no URL, use:\n"
+        "    \\resumeProjectHeading{\\textbf{Name}}{dates}\n\n"
+
+        "SKILLS SECTION:\n"
+        "  * Keep the six categories exactly as in the template:\n"
+        "    Languages & Frameworks, Architecture & APIs, Databases, DevOps & Cloud,\n"
+        "    Core CS, AI & Tools.\n"
+        "  * Omit a category only if the candidate has zero skills for it.\n"
+        "  * Use \\& (not bare &) inside \\resumeItem text.\n\n"
+
+        "EXTRA-CURRICULAR / HACKATHONS:\n"
+        "  * Use the \\resumeItem{\\textbf{...}: description. \\hfill {\\color{dark-grey} dates}}\n"
+        "    pattern shown in the template.\n"
+        "  * Include ALL clubs, hackathons, competitions, and leadership roles found.\n\n"
+
+        "DATES: Format 'Mon YYYY -- Mon YYYY' (e.g., 'Jul 2025 -- Sep 2025'). Use 'Present' for ongoing.\n\n"
+
+        "PAGE LENGTH: Target ONE page. Be concise but impactful.\n\n"
+
+        "════════════════════════════════════════\n"
+        "OUTPUT FORMAT — EXACT STRUCTURE REQUIRED\n"
+        "════════════════════════════════════════\n\n"
+        "Output ONLY the two blocks below. No extra text before, between, or after.\n\n"
         "<<<LATEX_START>>>\n"
-        "(the full, raw, compilable .tex file — from \\documentclass to \\end{document})\n"
+        "(complete, raw, compilable .tex -- from \\documentclass to \\end{document})\n"
         "<<<LATEX_END>>>\n\n"
         "<<<JSON_START>>>\n"
         "{\n"
-        '  "improvements": ["change 1", "change 2"],\n'
-        '  "ats_tips": ["tip 1", "tip 2"],\n'
+        '  "improvements": ["enhancement 1", "enhancement 2", "..."],\n'
+        '  "ats_tips": ["tip 1", "tip 2", "..."],\n'
         '  "missing_sections": [\n'
-        '    {"field": "name", "severity": "required|recommended", "action": "added_placeholder|added_section|flagged", "message": "friendly instruction"}\n'
+        '    {"field": "field_name", "severity": "required|recommended",\n'
+        '     "action": "omitted|flagged", "message": "friendly note for user"}\n'
         "  ]\n"
         "}\n"
         "<<<JSON_END>>>\n\n"
-        "No text before, between, or after the two blocks. "
-        "The LaTeX MUST be complete and compilable on Overleaf with no modifications."
+        "The LaTeX MUST compile on Overleaf without any modifications."
     )
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise ValueError("GEMINI_API_KEY is not set. Add it to your .env.local file.")
+        raise ValueError("GEMINI_API_KEY is not set. Add it to your .env or .env.local file.")
 
     client = genai.Client(api_key=api_key)
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-3.5-flash-lite",
         contents=prompt,
     )
 
@@ -293,7 +340,7 @@ def optimize_resume_to_latex(resume_text: str, is_latex_source: bool = False) ->
     # ── Extract LaTeX block ───────────────────────────────────────────
     latex_match = re.search(r'<<<LATEX_START>>>\n?(.*?)<<<LATEX_END>>>', raw, re.DOTALL)
     if not latex_match:
-        # Fallback: grab anything that looks like a LaTeX document
+        # Fallback: grab the first complete LaTeX document found in response
         latex_match = re.search(r'(\\documentclass.*?\\end\{document\})', raw, re.DOTALL)
     optimized_latex = latex_match.group(1).strip() if latex_match else ""
 
@@ -303,6 +350,7 @@ def optimize_resume_to_latex(resume_text: str, is_latex_source: bool = False) ->
     if json_match:
         try:
             json_raw = json_match.group(1).strip()
+            # Strip any accidental markdown fences
             json_raw = re.sub(r'^```(?:json)?\s*', '', json_raw, flags=re.MULTILINE).strip()
             json_raw = re.sub(r'```\s*$', '', json_raw, flags=re.MULTILINE).strip()
             metadata = json.loads(json_raw)
@@ -317,12 +365,11 @@ def optimize_resume_to_latex(resume_text: str, is_latex_source: bool = False) ->
     }
 
 
-# ─────────────────────────────────────────────
-# RESUME TEMPLATE GENERATOR
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# RESUME TEMPLATE HELPER  (used by GET /resume-template endpoint)
+# Returns the blank Harshibar template + section guidance for the frontend form.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Section metadata returned alongside the LaTeX template so the
-# client can render a guided form / checklist.
 RESUME_SECTIONS = [
     {
         "id": "contact",
@@ -390,155 +437,39 @@ RESUME_SECTIONS = [
         ],
     },
     {
-        "id": "certifications",
-        "title": "Certifications",
-        "required": False,
-        "description": "Add relevant industry certifications (AWS, Google Cloud, PMP, CPA, etc.).",
-        "fields": [
-            {"key": "cert_name",  "label": "Certification Name","placeholder": "[AWS Certified Solutions Architect]","required": True, "hint": ""},
-            {"key": "issuer",     "label": "Issuing Organization","placeholder": "[Amazon Web Services]",        "required": True,  "hint": ""},
-            {"key": "cert_date",  "label": "Date",               "placeholder": "[Month YYYY]",                  "required": False, "hint": ""},
-        ],
-    },
-    {
         "id": "extracurricular",
         "title": "Extracurricular Activities & Leadership",
         "required": False,
-        "description": "Clubs, volunteering, competitions, societies. Shows well-roundedness.",
+        "description": "Clubs, volunteering, competitions, hackathons. Shows well-roundedness.",
         "fields": [
-            {"key": "activity",   "label": "Activity / Role",   "placeholder": "[Club President, Coding Society]","required": True, "hint": "Lead with your role/title, not just the club name."},
-            {"key": "org",        "label": "Organization",       "placeholder": "[Organization Name]",            "required": True,  "hint": ""},
-            {"key": "dates",      "label": "Dates",              "placeholder": "[Month YYYY -- Month YYYY]",     "required": False, "hint": ""},
-            {"key": "impact",     "label": "Impact",             "placeholder": "[Organized 3 events for 200+ attendees]","required": False, "hint": "Add a metric wherever possible."},
-        ],
-    },
-    {
-        "id": "achievements",
-        "title": "Achievements & Awards",
-        "required": False,
-        "description": "Hackathon wins, academic honors, scholarships, competitions.",
-        "fields": [
-            {"key": "achievement","label": "Achievement",        "placeholder": "[Award Name, Organization, Year]","required": True, "hint": "'1st place out of 200 teams' is stronger than just 'Winner'."},
+            {"key": "activity",  "label": "Activity / Role",   "placeholder": "[Club President, Coding Society]",        "required": True,  "hint": "Lead with your role/title, not just the club name."},
+            {"key": "org",       "label": "Organization",       "placeholder": "[Organization Name]",                    "required": True,  "hint": ""},
+            {"key": "dates",     "label": "Dates",              "placeholder": "[Month YYYY -- Month YYYY]",             "required": False, "hint": ""},
+            {"key": "impact",    "label": "Impact",             "placeholder": "[Organized 3 events for 200+ attendees]", "required": False, "hint": "Add a metric wherever possible."},
         ],
     },
 ]
 
-LATEX_TEMPLATE = r"""\documentclass[letterpaper,11pt]{article}
 
-% ── Packages ──────────────────────────────────────────────────────
-\usepackage[top=0.6in, bottom=0.6in, left=0.75in, right=0.75in]{geometry}
-\usepackage[T1]{fontenc}
-\usepackage[utf8]{inputenc}
-\usepackage{lmodern}
-\usepackage{hyperref}
-\usepackage{enumitem}
-\usepackage{titlesec}
-\usepackage{xcolor}
-\usepackage{parskip}
-
-\hypersetup{colorlinks=true, urlcolor=blue, linkcolor=black}
-
-\titleformat{\section}{\large\bfseries}{}{0em}{}[\titlerule]
-\titlespacing{\section}{0pt}{8pt}{4pt}
-\setlist[itemize]{leftmargin=1.5em, itemsep=1pt, parsep=0pt, topsep=2pt}
-\pagestyle{empty}
-
-% ══════════════════════════════════════════════════════════════════
-\begin{document}
-
-% ── CONTACT INFORMATION (REQUIRED) ────────────────────────────────
-\begin{center}
-  {\LARGE\bfseries [Your Full Name]} \\[4pt]
-  \href{mailto:[your.email@example.com]}{[your.email@example.com]}
-  \quad|\quad [+1 (555) 000-0000]
-  \quad|\quad [City, State] \\[2pt]
-  \href{https://[linkedin.com/in/yourprofile]}{LinkedIn}
-  \quad|\quad
-  \href{https://[github.com/yourusername]}{GitHub}
-\end{center}
-
-% ── WORK EXPERIENCE (REQUIRED) ────────────────────────────────────
-\section{Experience}
-
-\textbf{[Job Title]} \hfill [Month YYYY] -- [Month YYYY or Present] \\
-\textit{[Company Name]} \hfill [City, State or Remote]
-\begin{itemize}
-  \item [Action verb + what you did + measurable result.]
-  \item [Action verb + what you did + measurable result.]
-\end{itemize}
-
-% ── EDUCATION (REQUIRED) ──────────────────────────────────────────
-\section{Education}
-
-\textbf{[University Name]} \hfill [Month YYYY] \\
-\textit{[B.S. / M.S. in Your Major]} \hfill [City, State]
-\begin{itemize}
-  \item GPA: [3.X/4.0]
-  \item Relevant Coursework: [Course 1, Course 2, Course 3]
-\end{itemize}
-
-% ── TECHNICAL SKILLS (REQUIRED) ───────────────────────────────────
-\section{Technical Skills}
-
-\begin{itemize}[leftmargin=0pt, label={}]
-  \item \textbf{Languages:}   [Python, TypeScript, Go, Java, C++]
-  \item \textbf{Frameworks:}  [React, FastAPI, Node.js, PyTorch]
-  \item \textbf{Tools:}       [Docker, Kubernetes, AWS, Git, PostgreSQL]
-\end{itemize}
-
-% ── PROJECTS (RECOMMENDED) ────────────────────────────────────────
-\section{Projects}
-
-\textbf{[Project Name]} \hfill \href{https://[github.com/you/project]}{GitHub}
-\begin{itemize}
-  \item Built with: [Python, React, AWS, PostgreSQL]
-  \item [Describe impact / scale.]
-\end{itemize}
-
-% ── EXTRACURRICULAR ACTIVITIES (RECOMMENDED) ──────────────────────
-\section{Extracurricular Activities}
-
-\textbf{[Role / Position]} \hfill [Month YYYY] -- [Month YYYY] \\
-\textit{[Organization Name]}
-\begin{itemize}
-  \item [Describe what you did and its impact.]
-\end{itemize}
-
-% ── CERTIFICATIONS (OPTIONAL) ─────────────────────────────────────
-\section{Certifications}
-
-\begin{itemize}
-  \item \textbf{[Certification Name]} -- [Issuing Organization], [Month YYYY]
-\end{itemize}
-
-% ── ACHIEVEMENTS (OPTIONAL) ───────────────────────────────────────
-\section{Achievements}
-
-\begin{itemize}
-  \item [Award name, Organization, Year.]
-\end{itemize}
-
-\end{document}
-"""
 
 
 def get_resume_template() -> dict:
     """
-    Returns a LaTeX resume scaffold with placeholder text and
-    a structured list of sections with field-level guidance.
+    Returns the blank Harshibar LaTeX scaffold and structured section metadata
+    so the frontend can render a guided resume-building form / checklist.
     """
     return {
-        "latex_template":    LATEX_TEMPLATE,
+        "latex_template":    HARSHIBAR_TEMPLATE,
         "sections":          RESUME_SECTIONS,
         "required_sections": [s["id"] for s in RESUME_SECTIONS if s["required"]],
         "optional_sections": [s["id"] for s in RESUME_SECTIONS if not s["required"]],
         "tips": [
             "Start every bullet point with a strong action verb (Built, Led, Reduced, Launched...).",
             "Add at least one number/metric to 40%+ of your bullets — the single biggest ATS score booster.",
-            "Use exact section titles: 'Experience', 'Education', 'Skills', 'Projects' — ATS parsers look for these.",
+            "Use section titles exactly: 'EDUCATION', 'PROFESSIONAL EXPERIENCE', 'PROJECTS UNDERTAKEN', 'SKILLS', 'EXTRA-CURRICULAR ACTIVITIES'.",
             "Keep your resume to one page if you have fewer than 5 years of experience.",
             "Never include a photo, date of birth, or marital status.",
-            "Use a consistent date format throughout: 'Month YYYY -- Month YYYY'.",
+            "Use a consistent date format throughout: 'Mon YYYY -- Mon YYYY'.",
             "Save and submit your final resume as a PDF compiled from this LaTeX source.",
         ],
     }
