@@ -10,7 +10,7 @@ from resume_optimizer import optimize_resume_to_latex, extract_text_from_latex
 from scorer import ResumeParser
 from auth import require_auth
 from credits import check_and_deduct_credit
-from db import get_collection
+from db import get_collection, get_ai_resume_collection
 from dotenv import load_dotenv
 load_dotenv()                              # base .env
 load_dotenv('.env.local', override=True)   # local overrides win
@@ -247,7 +247,7 @@ def optimize_resume():
             if os.path.exists(save_path):
                 os.remove(save_path)
 
-    # ── 4. Save to MongoDB ────────────────────────────────────────
+    # ── 4. Save to MongoDB ────────────────────────────────────────────
     try:
         collection = get_collection()
         collection.insert_one({
@@ -262,6 +262,17 @@ def optimize_resume():
         })
     except Exception as e:
         print(f"⚠️  Failed to save Optimize result to DB: {e}")
+
+    # ── 4b. Save optimized LaTeX output ──────────────────────────────
+    try:
+        ai_col = get_ai_resume_collection()
+        ai_col.insert_one({
+            "email":     g.email,
+            "latex":     result.get("optimized_latex", ""),
+            "timestamp": datetime.now(timezone.utc),
+        })
+    except Exception as e:
+        print(f"⚠️  Failed to save optimized LaTeX to ai-resume-optimization: {e}")
 
     # ── 5. Return response ────────────────────────────────────────
     return Response(
@@ -322,6 +333,18 @@ def optimize_resume_download():
                 os.remove(save_path)
 
     latex_content = result.get("optimized_latex", "")
+
+    # ── Save optimized LaTeX output ──────────────────────────────────
+    try:
+        ai_col = get_ai_resume_collection()
+        ai_col.insert_one({
+            "email":     g.email,
+            "latex":     latex_content,
+            "timestamp": datetime.now(timezone.utc),
+        })
+    except Exception as e:
+        print(f"⚠️  Failed to save optimized LaTeX to ai-resume-optimization: {e}")
+
     return Response(
         latex_content,
         mimetype='text/plain',

@@ -43,6 +43,12 @@ def get_credit_usage_collection():
     return db["credit-usage"]
 
 
+def get_ai_resume_collection():
+    """Return the 'ai-resume-optimization' collection (stores optimized LaTeX output)."""
+    db = _get_db()
+    return db["ai-resume-optimization"]
+
+
 def ensure_indexes():
     """Create recommended indexes on the ats-scoring collection."""
     collection = get_collection()
