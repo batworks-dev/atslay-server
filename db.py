@@ -31,6 +31,18 @@ def get_collection():
     return db["ats-scoring"]
 
 
+def get_users_collection():
+    """Return the 'users' collection (stores user credits etc.)."""
+    db = _get_db()
+    return db["users"]
+
+
+def get_credit_usage_collection():
+    """Return the 'credit-usage' collection (audit log for credit deductions)."""
+    db = _get_db()
+    return db["credit-usage"]
+
+
 def ensure_indexes():
     """Create recommended indexes on the ats-scoring collection."""
     collection = get_collection()

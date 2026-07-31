@@ -9,6 +9,7 @@ from jd_scorer import score_resume_against_jd
 from resume_optimizer import optimize_resume_to_latex, extract_text_from_latex
 from scorer import ResumeParser
 from auth import require_auth
+from credits import check_and_deduct_credit
 from db import get_collection
 from dotenv import load_dotenv
 load_dotenv()                              # base .env
@@ -193,6 +194,11 @@ def optimize_resume():
       Option B — LaTeX text  : form/JSON field "latex"  (raw LaTeX code string)
     """
 
+    # ── 0. Credit gate ────────────────────────────────────────────
+    ok, err = check_and_deduct_credit(g.email, "resume-optimizer")
+    if not ok:
+        return err
+
     # ── 1. Determine input mode ───────────────────────────────────
     latex_code  = request.form.get('latex') or (request.get_json(silent=True) or {}).get('latex')
     resume_file = request.files.get('resume')
@@ -276,6 +282,11 @@ def optimize_resume_download():
       Option A — PDF upload : multipart field "resume" (PDF file)
       Option B — LaTeX text : form/JSON field "latex"  (raw LaTeX code string)
     """
+    # ── 0. Credit gate ────────────────────────────────────────────
+    ok, err = check_and_deduct_credit(g.email, "resume-optimizer")
+    if not ok:
+        return err
+
     latex_code  = request.form.get('latex') or (request.get_json(silent=True) or {}).get('latex')
     resume_file = request.files.get('resume')
 
