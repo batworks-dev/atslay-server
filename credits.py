@@ -47,7 +47,7 @@ def check_and_deduct_credit(email: str, service_key: str):
     usage_col = get_credit_usage_collection()
 
     # ── 1. Fetch current credit balance ───────────────────────────────────
-    user_doc = users_col.find_one({"email": email}, {"credits": 1})
+    user_doc = users_col.find_one({"email": email}, {"tokens": 1})
 
     if user_doc is None:
         return False, (
@@ -58,7 +58,7 @@ def check_and_deduct_credit(email: str, service_key: str):
             404,
         )
 
-    current_credits = user_doc.get("credits", 0)
+    current_credits = user_doc.get("tokens", 0)
 
     if current_credits < cost:
         return False, (
@@ -73,8 +73,8 @@ def check_and_deduct_credit(email: str, service_key: str):
 
     # ── 2. Atomically deduct credits ──────────────────────────────────────
     result = users_col.update_one(
-        {"email": email, "credits": {"$gte": cost}},   # guard against race condition
-        {"$inc": {"credits": -cost}},
+        {"email": email, "tokens": {"$gte": cost}},   # guard against race condition
+        {"$inc": {"tokens": -cost}},
     )
 
     if result.modified_count == 0:

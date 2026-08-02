@@ -12,7 +12,9 @@ load_dotenv()
 # JWT CONFIG
 # ─────────────────────────────────────────────
 
-JWT_SECRET = os.environ.get("JWT_PASSWORD")
+# NOTE: JWT_SECRET is intentionally NOT cached at module level.
+# app.py calls load_dotenv('.env.local', override=True) AFTER importing
+# this module, so reading os.environ at import time would capture a stale value.
 JWT_ALGORITHM = "HS256"
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}$")
@@ -27,6 +29,7 @@ def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         # ── 1. Check JWT_SECRET is configured ─────────────────────
+        JWT_SECRET = os.environ.get("JWT_PASSWORD")
         if not JWT_SECRET:
             return jsonify({"error": "Server misconfiguration: JWT_PASSWORD not set."}), 500
 
