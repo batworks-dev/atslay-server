@@ -38,7 +38,12 @@ def allowed_file(filename):
 @app.route('/score-resume', methods=['POST'])
 @require_auth
 def score_resume():
-    # ── 1. Check a file was sent ──────────────────────────────────
+    # ── 0. Credit gate (free — audit logged only) ───────────────────────
+    ok, err = check_and_deduct_credit(g.email, "score-resume")
+    if not ok:
+        return err
+
+    # ── 1. Check a file was sent ───────────────────────────────────
     if 'resume' not in request.files:
         return jsonify({'error': 'No file found. Send file with key "resume"'}), 400
 
@@ -93,6 +98,11 @@ def health():
 @app.route('/score-resume-jd', methods=['POST'])
 @require_auth
 def score_resume_jd():
+
+    # ── 0. Credit gate (0.5 credits) ──────────────────────────────
+    ok, err = check_and_deduct_credit(g.email, "score-resume-jd")
+    if not ok:
+        return err
 
     # ── 1. Validate resume file ───────────────────────────────────
     if 'resume' not in request.files:

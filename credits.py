@@ -22,6 +22,14 @@ SERVICES = {
         "display_name": "AI Resume Optimizer",
         "credits_cost": 1,
     },
+    "score-resume-jd": {
+        "display_name": "Resume vs JD Scorer",
+        "credits_cost": 0.5,
+    },
+    "score-resume": {
+        "display_name": "Resume Scorer",
+        "credits_cost": 0,
+    },
 }
 
 
@@ -43,6 +51,21 @@ def check_and_deduct_credit(email: str, service_key: str):
         return True, None
 
     cost = service["credits_cost"]
+
+    # ── Free service: log an audit entry and return immediately ──────────
+    if cost == 0:
+        usage_col = get_credit_usage_collection()
+        try:
+            usage_col.insert_one({
+                "email":        email,
+                "service":      service_key,
+                "service_name": service["display_name"],
+                "credits_used": 0,
+                "timestamp":    datetime.now(timezone.utc),
+            })
+        except Exception as log_err:
+            print(f"⚠️  Failed to write credit-usage log: {log_err}")
+        return True, None
     users_col = get_users_collection()
     usage_col = get_credit_usage_collection()
 
